@@ -156,16 +156,25 @@ const Expenses = () => {
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-white">My Expenses</h1>
-          <p className="text-gray-400">Track and manage your expense claims</p>
+          <h1 className="text-3xl font-bold text-white">
+            {user.role === 'Admin' || user.role === 'CFO' ? 'Company Expenses' : 'My Expenses'}
+          </h1>
+          <p className="text-gray-400">
+            {user.role === 'Admin' || user.role === 'CFO' 
+              ? 'View and manage all company expense claims' 
+              : 'Track and manage your expense claims'
+            }
+          </p>
         </div>
-        <button
-          onClick={() => setShowForm(true)}
-          className="btn-primary flex items-center gap-2"
-        >
-          <Plus className="w-5 h-5" />
-          New Expense
-        </button>
+        {(user.role === 'Employee' || user.role === 'Manager') && (
+          <button
+            onClick={() => setShowForm(true)}
+            className="btn-primary flex items-center gap-2"
+          >
+            <Plus className="w-5 h-5" />
+            New Expense
+          </button>
+        )}
       </div>
 
       {/* Filters */}
@@ -232,13 +241,17 @@ const Expenses = () => {
             <p className="text-gray-500 mb-6">
               {Object.values(filters).some(v => v !== '') 
                 ? 'Try adjusting your filters' 
-                : 'Create your first expense to get started'
+                : (user.role === 'Admin' || user.role === 'CFO')
+                  ? 'No company expenses found'
+                  : 'Create your first expense to get started'
               }
             </p>
-            <button onClick={() => setShowForm(true)} className="btn-primary">
-              <Plus className="w-4 h-4 mr-2" />
-              Create Expense
-            </button>
+            {(user.role === 'Employee' || user.role === 'Manager') && (
+              <button onClick={() => setShowForm(true)} className="btn-primary">
+                <Plus className="w-4 h-4 mr-2" />
+                Create Expense
+              </button>
+            )}
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -248,6 +261,9 @@ const Expenses = () => {
                   <th className="px-4 py-3 text-left text-sm font-medium text-gray-300">Date</th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-gray-300">Description</th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-gray-300">Category</th>
+                  {(user.role === 'Admin' || user.role === 'CFO') && (
+                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-300">Submitted By</th>
+                  )}
                   <th className="px-4 py-3 text-left text-sm font-medium text-gray-300">Amount</th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-gray-300">Status</th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-gray-300">Actions</th>
@@ -268,6 +284,11 @@ const Expenses = () => {
                       </div>
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-300">{expense.category}</td>
+                    {(user.role === 'Admin' || user.role === 'CFO') && (
+                      <td className="px-4 py-3 text-sm text-gray-300">
+                        {expense.submitter_name || 'Unknown'}
+                      </td>
+                    )}
                     <td className="px-4 py-3">
                       <div>
                         <span className="text-emerald-400 font-bold">
