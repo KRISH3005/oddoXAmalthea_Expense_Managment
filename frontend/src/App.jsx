@@ -9,6 +9,8 @@ import DashboardLayout from './components/layout/DashboardLayout';
 import Dashboard from './pages/Dashboard';
 import Expenses from './pages/Expenses';
 import Approvals from './pages/Approvals';
+import ApprovalRules from './pages/ApprovalRules';
+import ManagerRelationships from './pages/ManagerRelationships';
 import Users from './pages/Users';
 import Profile from './pages/Profile';
 
@@ -32,6 +34,8 @@ const AppRoutes = () => {
           <Route index element={<Dashboard />} />
           <Route path="expenses" element={<Expenses />} />
           <Route path="approvals" element={<Approvals />} />
+          <Route path="approval-rules" element={<ApprovalRules />} />
+          <Route path="managers" element={<ManagerRelationships />} />
           <Route path="users" element={<Users />} />
           <Route path="profile" element={<Profile />} />
           <Route path="*" element={<Navigate to="/" replace />} />

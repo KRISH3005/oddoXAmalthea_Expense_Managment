@@ -4,12 +4,14 @@ import {
   Home, 
   Receipt, 
   CheckSquare, 
+  Settings,
   Users, 
   User, 
   LogOut, 
   Menu, 
   X,
-  Bell
+  Bell,
+  Building
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import ThemeToggler from '../ui/ThemeToggler';
@@ -26,8 +28,14 @@ const DashboardLayout = () => {
   const navigation = [
     { name: 'Dashboard', href: '/', icon: Home, current: location.pathname === '/' },
     { name: 'Expenses', href: '/expenses', icon: Receipt, current: location.pathname === '/expenses' },
-    ...(user.role === 'Manager' || user.role === 'Admin' 
+    ...(user.role === 'Manager' || user.role === 'Admin' || user.role === 'CFO' 
       ? [{ name: 'Approvals', href: '/approvals', icon: CheckSquare, current: location.pathname === '/approvals' }] 
+      : []),
+    ...(user.role === 'Admin' || user.role === 'CFO' 
+      ? [{ name: 'Approval Rules', href: '/approval-rules', icon: Settings, current: location.pathname === '/approval-rules' }] 
+      : []),
+    ...(user.role === 'Admin' 
+      ? [{ name: 'Manager Relationships', href: '/managers', icon: Building, current: location.pathname === '/managers' }] 
       : []),
     ...(user.role === 'Admin' 
       ? [{ name: 'Users', href: '/users', icon: Users, current: location.pathname === '/users' }] 
