@@ -71,7 +71,7 @@ const Approvals = () => {
       } else if (activeTab === "history") {
         const res = await axios.get("/approvals/history", { params });
         setApprovalHistory(res.data.approvals || []);
-      } else if (activeTab === "company" && (user.role === 'Admin' || user.role === 'Manager')) {
+      } else if (activeTab === "company" && (user.role === 'Admin' || user.role === 'Manager' || user.role === 'CFO')) {
         const res = await axios.get("/approvals/company/pending", { params });
         setCompanyPendingApprovals(res.data.approvals || []);
       }
@@ -105,7 +105,17 @@ const Approvals = () => {
       setSuccess(null);
       
       const endpoint = action === "approve" ? "approve" : "reject";
-      await axios.post(`/approvals/${expenseId}/${endpoint}`, { comments });
+      const url = `/approvals/${expenseId}/${endpoint}`;
+      
+      console.log("=== DEBUGGING APPROVAL ACTION ===");
+      console.log("Expense ID:", expenseId);
+      console.log("Action:", action);
+      console.log("Endpoint:", endpoint);
+      console.log("Full URL:", url);
+      console.log("Comments:", comments);
+      console.log("================================");
+      
+      await axios.post(url, { comments });
       
       setSuccess(`Expense ${action}d successfully!`);
       setSelectedApproval(null);
@@ -370,7 +380,7 @@ const Approvals = () => {
         {[
           { key: "pending", label: "My Pending", icon: Clock },
           { key: "history", label: "My History", icon: CheckCircle },
-          ...(user.role === 'Admin' || user.role === 'Manager' 
+          ...(user.role === 'Admin' || user.role === 'Manager' || user.role === 'CFO' 
             ? [{ key: "company", label: "Company Pending", icon: Building }] 
             : [])
         ].map((tab) => (

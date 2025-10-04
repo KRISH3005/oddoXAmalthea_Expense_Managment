@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, TrendingUp, TrendingDown, Clock, CheckCircle, XCircle, DollarSign, Users, Receipt } from 'lucide-react';
+import { Plus, TrendingUp, TrendingDown, Clock, CheckCircle, XCircle, DollarSign, Users, Receipt, Settings, Building } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
@@ -31,9 +31,9 @@ const Dashboard = () => {
       const expensesResponse = await axios.get('/expenses');
       const expenses = expensesResponse.data.expenses || [];
       
-      // Fetch pending approvals if user is Manager/Admin
+      // Fetch pending approvals if user is Manager/Admin/CFO
       let pendingApprovals = [];
-      if (user.role === 'Manager' || user.role === 'Admin') {
+      if (user.role === 'Manager' || user.role === 'Admin' || user.role === 'CFO') {
         try {
           const approvalsResponse = await axios.get('/approvals/pending');
           pendingApprovals = approvalsResponse.data.approvals || [];
@@ -149,26 +149,47 @@ const Dashboard = () => {
           </span>
         </h1>
         <p className="text-gray-400 text-lg">
-          Here's your expense overview for {company?.name}
+          {user.role === 'Admin' || user.role === 'CFO' 
+            ? `Here's the company expense overview for ${company?.name}`
+            : `Here's your expense overview for ${company?.name}`
+          }
         </p>
       </div>
 
       {/* Quick Actions */}
       <div className="flex flex-wrap gap-4 justify-center">
-        <Link to="/expenses" className="btn-primary flex items-center gap-2">
-          <Plus className="w-4 h-4" />
-          Submit Expense
-        </Link>
-        {(user.role === 'Manager' || user.role === 'Admin') && dashboardData.pendingApprovals.length > 0 && (
+        {(user.role === 'Employee' || user.role === 'Manager') && (
+          <Link to="/expenses" className="btn-primary flex items-center gap-2">
+            <Plus className="w-4 h-4" />
+            Submit Expense
+          </Link>
+        )}
+        {(user.role === 'Manager' || user.role === 'Admin' || user.role === 'CFO') && dashboardData.pendingApprovals.length > 0 && (
           <Link to="/approvals" className="btn-secondary flex items-center gap-2">
             <Clock className="w-4 h-4" />
             Review Approvals ({dashboardData.pendingApprovals.length})
           </Link>
         )}
         {user.role === 'Admin' && (
-          <Link to="/users" className="btn-secondary flex items-center gap-2">
-            <Users className="w-4 h-4" />
-            Manage Users
+          <>
+            <Link to="/users" className="btn-secondary flex items-center gap-2">
+              <Users className="w-4 h-4" />
+              Manage Users
+            </Link>
+            <Link to="/approval-rules" className="btn-secondary flex items-center gap-2">
+              <Settings className="w-4 h-4" />
+              Approval Rules
+            </Link>
+            <Link to="/managers" className="btn-secondary flex items-center gap-2">
+              <Building className="w-4 h-4" />
+              Manager Relations
+            </Link>
+          </>
+        )}
+        {user.role === 'CFO' && (
+          <Link to="/approval-rules" className="btn-secondary flex items-center gap-2">
+            <Settings className="w-4 h-4" />
+            Approval Rules
           </Link>
         )}
       </div>
@@ -176,7 +197,7 @@ const Dashboard = () => {
       {/* Statistics Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard
-          title="Total Expenses"
+          title={user.role === 'Admin' || user.role === 'CFO' ? "Company Total Expenses" : "Total Expenses"}
           value={formatCurrency(dashboardData.stats.totalExpenses)}
           icon={DollarSign}
           color="emerald"
@@ -184,7 +205,7 @@ const Dashboard = () => {
         />
         
         <StatCard
-          title="This Month"
+          title={user.role === 'Admin' || user.role === 'CFO' ? "This Month (Company)" : "This Month"}
           value={formatCurrency(dashboardData.stats.thisMonthExpenses)}
           icon={Receipt}
           color="blue"
@@ -200,7 +221,7 @@ const Dashboard = () => {
         />
 
         <StatCard
-          title="Pending Approval"
+          title={user.role === 'Admin' || user.role === 'CFO' ? "Pending Approval (Company)" : "Pending Approval"}
           value={formatCurrency(dashboardData.stats.pendingAmount)}
           icon={Clock}
           color="yellow"
@@ -208,7 +229,7 @@ const Dashboard = () => {
         />
 
         <StatCard
-          title="Approved"
+          title={user.role === 'Admin' || user.role === 'CFO' ? "Approved (Company)" : "Approved"}
           value={formatCurrency(dashboardData.stats.approvedAmount)}
           icon={CheckCircle}
           color="green"
@@ -221,7 +242,9 @@ const Dashboard = () => {
         {/* Recent Expenses */}
         <div className="card">
           <div className="flex justify-between items-center mb-6">
-            <h2 className="text-xl font-bold text-white">Recent Expenses</h2>
+            <h2 className="text-xl font-bold text-white">
+              {user.role === 'Admin' || user.role === 'CFO' ? 'Recent Company Expenses' : 'Recent Expenses'}
+            </h2>
             <Link to="/expenses" className="text-emerald-400 hover:text-emerald-300 text-sm font-medium">
               View All →
             </Link>
@@ -230,11 +253,15 @@ const Dashboard = () => {
           {dashboardData.expenses.length === 0 ? (
             <div className="text-center py-8">
               <Receipt className="w-12 h-12 text-gray-500 mx-auto mb-3" />
-              <p className="text-gray-400 mb-4">No expenses yet</p>
-              <Link to="/expenses" className="btn-primary">
-                <Plus className="w-4 h-4 mr-2" />
-                Create First Expense
-              </Link>
+              <p className="text-gray-400 mb-4">
+                {user.role === 'Admin' || user.role === 'CFO' ? 'No company expenses yet' : 'No expenses yet'}
+              </p>
+              {(user.role === 'Employee' || user.role === 'Manager') && (
+                <Link to="/expenses" className="btn-primary">
+                  <Plus className="w-4 h-4 mr-2" />
+                  Create First Expense
+                </Link>
+              )}
             </div>
           ) : (
             <div className="space-y-3">
@@ -247,6 +274,9 @@ const Dashboard = () => {
                       <p className="text-gray-400 text-sm">
                         {new Date(expense.expense_date).toLocaleDateString()}
                       </p>
+                      {(user.role === 'Admin' || user.role === 'CFO') && (
+                        <p className="text-gray-400 text-sm">by {expense.submitter_name}</p>
+                      )}
                       <span className={`text-xs font-medium ${getStatusColor(expense.approval_status)}`}>
                         {expense.approval_status}
                       </span>
@@ -264,8 +294,8 @@ const Dashboard = () => {
           )}
         </div>
 
-        {/* Manager/Admin: Pending Approvals */}
-        {(user.role === 'Manager' || user.role === 'Admin') && (
+        {/* Manager/Admin/CFO: Pending Approvals */}
+        {(user.role === 'Manager' || user.role === 'Admin' || user.role === 'CFO') && (
           <div className="card">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-xl font-bold text-white">Pending Approvals</h2>
