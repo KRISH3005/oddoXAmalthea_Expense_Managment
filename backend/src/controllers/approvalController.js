@@ -138,8 +138,8 @@ const getApprovalHistory = async (req, res) => {
             ea.expense_id,
             ast.step_order,
             ea.approved_at,
-            NULL as rejected_at,
-            NULL as comments,
+            NULL::timestamp as rejected_at,
+            NULL::text as comments,
             ea.created_at as step_created_at,
         e.description,
         e.amount,
@@ -195,17 +195,68 @@ const getApprovalHistory = async (req, res) => {
 
 const approveExpense = async (req, res) => {
   try {
+    console.log('=== APPROVE EXPENSE FUNCTION START ===');
+    console.log('req.params:', req.params);
+    console.log('req.body:', req.body);
+    console.log('req.user:', req.user);
+    
     const { expenseId } = req.params;
     const { comments } = req.body;
     const userId = req.user.id;
+    
+    console.log('expenseId:', expenseId);
+    console.log('comments:', comments);
+    console.log('userId:', userId);
 
+    console.log('Starting database transaction...');
     await pool.query('BEGIN');
 
+    // Check if user is CFO - CFO can approve any expense without threshold
+    if (req.user.role === 'CFO') {
+        console.log('CFO user detected - bypassing normal approval workflow');
+        
+        // Update the expense status directly
+        await pool.query(`
+            UPDATE expenses 
+            SET approval_status = 'approved', approved_at = CURRENT_TIMESTAMP 
+            WHERE id = $1
+        `, [expenseId]);
+        
+        // Mark all approval steps as approved by CFO
+        await pool.query(`
+            UPDATE approval_steps 
+            SET approved_at = CURRENT_TIMESTAMP, comments = $1 
+            WHERE expense_id = $2
+        `, [comments || 'Approved by CFO', expenseId]);
+        
+        console.log('CFO approval completed successfully');
+        await pool.query('COMMIT');
+        return res.json({ message: 'Expense approved successfully by CFO' });
+    }
+
     // Check if this is a sequential approval
+    console.log('Checking for sequential approval...');
     const sequentialStep = await pool.query(`
         SELECT * FROM approval_steps 
         WHERE expense_id = $1 AND approver_id = $2 AND is_current = true
     `, [expenseId, userId]);
+    
+    console.log('Sequential step result:', sequentialStep.rows.length, 'rows found');
+    
+    // Check if there are any approval steps for this expense at all
+    const allSteps = await pool.query(`
+        SELECT COUNT(*) as step_count FROM approval_steps WHERE expense_id = $1
+    `, [expenseId]);
+    
+    console.log('Total approval steps for expense:', allSteps.rows[0].step_count);
+    
+    if (parseInt(allSteps.rows[0].step_count) === 0) {
+        await pool.query('ROLLBACK');
+        console.log('No approval workflow found for this expense');
+        return res.status(400).json({ message: 'No approval workflow found for this expense. This expense may not need approval or the workflow was not properly set up.' });
+    }
+    
+    console.log('Approval workflow exists, checking if user can approve...');
 
     if (sequentialStep.rows.length > 0) {
         // Sequential approval
@@ -266,33 +317,76 @@ const approveExpense = async (req, res) => {
                 WHERE expense_id = $1 AND approver_id = $2
             `, [expenseId, userId]);
 
-            // Check if percentage threshold is met
-            const totalQuery = await pool.query(`
-                SELECT COUNT(*) as total FROM expense_approvers 
-                WHERE expense_id = $1 AND step_id = $2
-            `, [expenseId, step_id]);
-            
-            const approvedQuery = await pool.query(`
-                SELECT COUNT(*) as approved FROM expense_approvers 
-                WHERE expense_id = $1 AND step_id = $2 AND approved_at IS NOT NULL
-            `, [expenseId, step_id]);
-            
-            const total = parseInt(totalQuery.rows[0].total);
-            const approved = parseInt(approvedQuery.rows[0].approved);
-            
-            // Get threshold from approval_rules (default 50%)
-            const thresholdQuery = await pool.query(`
-                SELECT ar.threshold 
+            // Get rule type and threshold from approval_rules
+            const ruleQuery = await pool.query(`
+                SELECT ar.rule_type, ar.threshold, ar.special_role
                 FROM approval_steps ast
                 JOIN approval_rules ar ON ar.step_order = ast.step_order
                 JOIN expenses e ON e.id = ast.expense_id
                 WHERE ast.id = $1 AND ar.company_id = e.company_id
             `, [step_id]);
             
-            const threshold = thresholdQuery.rows[0]?.threshold || 50;
-            const percentageApproved = (approved / total) * 100;
+            const rule = ruleQuery.rows[0];
+            const ruleType = rule?.rule_type || 'percentage';
+            const threshold = rule?.threshold || 50;
+            const specialRole = rule?.special_role;
             
-            if (percentageApproved >= threshold) {
+            let shouldApprove = false;
+            
+            if (ruleType === 'hybrid') {
+                // Hybrid logic: Check if percentage threshold is met OR specific role approved
+                const totalQuery = await pool.query(`
+                    SELECT COUNT(*) as total FROM expense_approvers 
+                    WHERE expense_id = $1 AND step_id = $2
+                `, [expenseId, step_id]);
+                
+                const approvedQuery = await pool.query(`
+                    SELECT COUNT(*) as approved FROM expense_approvers 
+                    WHERE expense_id = $1 AND step_id = $2 AND approved_at IS NOT NULL
+                `, [expenseId, step_id]);
+                
+                const total = parseInt(totalQuery.rows[0].total);
+                const approved = parseInt(approvedQuery.rows[0].approved);
+                const percentageApproved = (approved / total) * 100;
+                
+                // Check if percentage threshold is met
+                const percentageMet = percentageApproved >= threshold;
+                
+                // Check if specific role (e.g., CFO) has approved
+                const specificRoleApproved = await pool.query(`
+                    SELECT COUNT(*) as count FROM expense_approvers ea
+                    JOIN users u ON ea.approver_id = u.id
+                    WHERE ea.expense_id = $1 AND ea.step_id = $2 
+                    AND ea.approved_at IS NOT NULL AND u.role = $3
+                `, [expenseId, step_id, specialRole]);
+                
+                const hasSpecificRoleApproval = parseInt(specificRoleApproved.rows[0].count) > 0;
+                
+                // Hybrid: Approve if percentage threshold met OR specific role approved
+                shouldApprove = percentageMet || hasSpecificRoleApproval;
+                
+                console.log(`Hybrid approval check: ${percentageApproved}% >= ${threshold}% OR ${specialRole} approved: ${hasSpecificRoleApproval} = ${shouldApprove}`);
+                
+            } else {
+                // Regular percentage logic
+                const totalQuery = await pool.query(`
+                    SELECT COUNT(*) as total FROM expense_approvers 
+                    WHERE expense_id = $1 AND step_id = $2
+                `, [expenseId, step_id]);
+                
+                const approvedQuery = await pool.query(`
+                    SELECT COUNT(*) as approved FROM expense_approvers 
+                    WHERE expense_id = $1 AND step_id = $2 AND approved_at IS NOT NULL
+                `, [expenseId, step_id]);
+                
+                const total = parseInt(totalQuery.rows[0].total);
+                const approved = parseInt(approvedQuery.rows[0].approved);
+                const percentageApproved = (approved / total) * 100;
+                
+                shouldApprove = percentageApproved >= threshold;
+            }
+            
+            if (shouldApprove) {
                 // Mark step as approved and check for next steps
                 await pool.query(`
                     UPDATE approval_steps 
@@ -335,12 +429,15 @@ const approveExpense = async (req, res) => {
                 }
             }
         } else {
+            console.log('User is not assigned as an approver for this expense');
             await pool.query('ROLLBACK');
             return res.status(404).json({ message: 'No pending approval found for this user' });
         }
     }
 
+    console.log('Transaction committed successfully');
     await pool.query('COMMIT');
+    console.log('Sending success response');
     res.json({ message: 'Expense approved successfully' });
 
   } catch (error) {
@@ -361,6 +458,29 @@ const rejectExpense = async (req, res) => {
     }
 
     await pool.query('BEGIN');
+
+    // Check if user is CFO - CFO can reject any expense
+    if (req.user.role === 'CFO') {
+        console.log('CFO user detected - bypassing normal rejection workflow');
+        
+        // Update the expense status directly
+        await pool.query(`
+            UPDATE expenses 
+            SET approval_status = 'rejected' 
+            WHERE id = $1
+        `, [expenseId]);
+        
+        // Mark all approval steps as rejected by CFO
+        await pool.query(`
+            UPDATE approval_steps 
+            SET rejected_at = CURRENT_TIMESTAMP, comments = $1 
+            WHERE expense_id = $2
+        `, [comments || 'Rejected by CFO', expenseId]);
+        
+        console.log('CFO rejection completed successfully');
+        await pool.query('COMMIT');
+        return res.json({ message: 'Expense rejected successfully by CFO' });
+    }
 
     // Check if this is a sequential approval
     const sequentialStep = await pool.query(`
@@ -428,8 +548,8 @@ const getCompanyPendingApprovals = async (req, res) => {
   try {
     const { role } = req.user;
     
-    if (!['Admin', 'Manager'].includes(role)) {
-      return res.status(403).json({ message: 'Access denied. Admin or Manager role required.' });
+    if (!['Admin', 'Manager', 'CFO'].includes(role)) {
+      return res.status(403).json({ message: 'Access denied. Admin, Manager, or CFO role required.' });
     }
 
     const query = `
@@ -448,7 +568,9 @@ const getCompanyPendingApprovals = async (req, res) => {
             e.receipt_url,
             e.approval_status,
             u.name as submitter_name,
-            'sequential' as approval_type
+            'sequential' as approval_type,
+            NULL::integer as total_approvers,
+            NULL::integer as approved_count
         FROM approval_steps ast
         JOIN expenses e ON ast.expense_id = e.id
         JOIN users u ON e.submitter_id = u.id
@@ -463,6 +585,7 @@ const getCompanyPendingApprovals = async (req, res) => {
             ea.id as expense_approver_id,
             ea.expense_id,
             ast.step_order,
+            NULL::text as comments,
             ast.created_at as step_created_at,
             e.description,
             e.amount,
