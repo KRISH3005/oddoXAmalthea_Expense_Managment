@@ -39,22 +39,37 @@ const upload = multer({
 // All routes require authentication
 router.use(authenticateToken);
 
-// GET /api/expenses - Get user's expenses
+// GET /api/expenses - Get expenses (personal for Employee/Manager, company-wide for Admin/CFO)
 router.get('/', async (req, res) => {
   try {
     const { status, category, startDate, endDate } = req.query;
-    const userId = req.user.id;
+    const { id: userId, role, company_id } = req.user;
 
-    let query = `
-      SELECT e.*, u.name as submitter_name,
-             COALESCE(e.approval_status, 'pending') as approval_status
-      FROM expenses e
-      LEFT JOIN users u ON e.submitter_id = u.id
-      WHERE e.submitter_id = $1
-    `;
+    let query, params, paramCount;
 
-    let params = [userId];
-    let paramCount = 1;
+    // Admin and CFO see company-wide expenses, others see personal expenses
+    if (role === 'Admin' || role === 'CFO') {
+      query = `
+        SELECT e.*, u.name as submitter_name,
+               COALESCE(e.approval_status, 'pending') as approval_status
+        FROM expenses e
+        LEFT JOIN users u ON e.submitter_id = u.id
+        WHERE e.company_id = $1
+      `;
+      params = [company_id];
+      paramCount = 1;
+    } else {
+      // Employee and Manager see only their own expenses
+      query = `
+        SELECT e.*, u.name as submitter_name,
+               COALESCE(e.approval_status, 'pending') as approval_status
+        FROM expenses e
+        LEFT JOIN users u ON e.submitter_id = u.id
+        WHERE e.submitter_id = $1
+      `;
+      params = [userId];
+      paramCount = 1;
+    }
 
     if (status) {
       paramCount++;

@@ -41,7 +41,10 @@ app.get('/', (req, res) => {
       expenses: '/api/expenses/*',
       users: '/api/users/*',
       approvals: '/api/approvals/*',
-      company: '/api/company/*'
+      company: '/api/company/*',
+      approvalRules: '/api/approval-rules/*',
+      managers: '/api/managers/*',
+      currency: '/api/currency/*'
     }
   });
 });
@@ -80,6 +83,27 @@ try {
   console.log('✅ Company routes loaded');
 } catch (error) {
   console.error('❌ Company routes failed:', error.message);
+}
+
+try {
+  app.use('/api/approval-rules', require('./src/routes/approvalRules'));
+  console.log('✅ Approval Rules routes loaded');
+} catch (error) {
+  console.error('❌ Approval Rules routes failed:', error.message);
+}
+
+try {
+  app.use('/api/managers', require('./src/routes/managers'));
+  console.log('✅ Manager routes loaded');
+} catch (error) {
+  console.error('❌ Manager routes failed:', error.message);
+}
+
+try {
+  app.use('/api/currency', require('./src/routes/currency'));
+  console.log('✅ Currency routes loaded');
+} catch (error) {
+  console.error('❌ Currency routes failed:', error.message);
 }
 
 // 404 handler for API routes

@@ -455,6 +455,15 @@ const getCompanyPendingApprovals = async (req, res) => {
 
 // After creating new expense (just after inserting into expenses table!)
 async function initializeApprovalWorkflow(expenseId, companyId) {
+  // Get the expense to find the submitter
+  const { rows: [expense] } = await pool.query(`
+    SELECT submitter_id FROM expenses WHERE id = $1
+  `, [expenseId]);
+
+  if (!expense) {
+    throw new Error('Expense not found');
+  }
+
   // Get company rules (ordered)
   const { rows: rules } = await pool.query(`
     SELECT * FROM approval_rules 
@@ -462,7 +471,39 @@ async function initializeApprovalWorkflow(expenseId, companyId) {
     ORDER BY step_order ASC
   `, [companyId]);
 
+  // Check if any rule requires manager approval first
+  const managerApproverRule = rules.find(rule => rule.is_manager_approver);
+  
+  if (managerApproverRule) {
+    // Get the submitter's manager
+    const { rows: [submitter] } = await pool.query(`
+      SELECT manager_id FROM users WHERE id = $1
+    `, [expense.submitter_id]);
+
+    if (submitter && submitter.manager_id) {
+      // Create manager approval step first
+      const { rows: [managerStep] } = await pool.query(`
+        INSERT INTO approval_steps (expense_id, step_order, role, approver_id, is_current)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING id
+      `, [
+        expenseId,
+        0, // Step 0 for manager approval
+        'Manager',
+        submitter.manager_id,
+        true // Manager step is current
+      ]);
+
+      console.log(`Manager approval step created for expense ${expenseId}, manager: ${submitter.manager_id}`);
+    }
+  }
+
   for (const rule of rules) {
+    // Skip manager approver rules as they're handled above
+    if (rule.is_manager_approver) {
+      continue;
+    }
+
     // Insert approval_step for each step
     const { rows: [step] } = await pool.query(`
       INSERT INTO approval_steps (expense_id, step_order, role, is_current)
@@ -472,7 +513,7 @@ async function initializeApprovalWorkflow(expenseId, companyId) {
       expenseId,
       rule.step_order,
       rule.special_role,
-      rule.step_order === 1 // 1st step is_current, others false
+      rule.step_order === 1 && !managerApproverRule // 1st step is_current only if no manager approval
     ]);
 
     // For 'percentage' (parallel), insert all approvers in expense_approvers
@@ -498,6 +539,18 @@ async function initializeApprovalWorkflow(expenseId, companyId) {
         await pool.query(`
           UPDATE approval_steps SET approver_id = $1 WHERE id = $2
         `, [approvers[0].id, step.id]);
+      }
+    } else if (rule.rule_type === 'hybrid') {
+      // For 'hybrid', find all users for this role and add them to expense_approvers
+      const { rows: approvers } = await pool.query(`
+        SELECT id FROM users WHERE role = $1 AND company_id = $2
+      `, [rule.special_role, companyId]);
+      
+      for (const approver of approvers) {
+        await pool.query(`
+          INSERT INTO expense_approvers (expense_id, step_id, approver_id)
+          VALUES ($1, $2, $3)
+        `, [expenseId, step.id, approver.id]);
       }
     }
   }
