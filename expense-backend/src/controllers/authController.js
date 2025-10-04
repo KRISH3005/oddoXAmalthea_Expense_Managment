@@ -134,26 +134,25 @@ const login = async (req, res) => {
 };
 
 // GET CURRENT USER - Get user info from token
-const getCurrentUser = async (req, res) => {
-  try {
-    const user = req.user;
-    res.json({
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role
-      },
-      company: {
-        id: user.company_id,
-        name: user.company_name,
-        baseCurrency: user.base_currency
-      }
-    });
-  } catch (error) {
-    console.error('Get current user error:', error);
-    res.status(500).json({ message: 'Internal server error' });
-  }
-};
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 module.exports = { signup, login, getCurrentUser };
